@@ -10,6 +10,8 @@
 #import "APService.h"
 
 @implementation JPushPlugin
+@synthesize notificationMessage;
+@synthesize isInline;
 
 - (CDVPlugin*)initWithWebView:(UIWebView*)theWebView{
     if (self=[super initWithWebView:theWebView]) {
@@ -19,7 +21,6 @@
                           selector:@selector(networkDidReceiveMessage:)
                               name:kJPFNetworkDidReceiveMessageNotification
                             object:nil];
-
     }
     return self;
 }
@@ -34,31 +35,30 @@
     NSString *alias=[arguments objectAtIndex:0];
     NSArray  *arrayTags=[arguments objectAtIndex:1];
     NSSet* set=[NSSet setWithArray:arrayTags];
-   [APService setTags:set
+    [APService setTags:set
                  alias:alias
       callbackSelector:@selector(tagsWithAliasCallback:tags:alias:)
                 object:self];
 }
-    
+
 -(void)setTags:(CDVInvokedUrlCommand *)command{
     
-
     NSArray *arguments=[command arguments];
     NSString *tags=[arguments objectAtIndex:0];
     
     NSArray  *array=[tags componentsSeparatedByString:@","];
-   [APService setTags:[NSSet setWithArray:array]
+    [APService setTags:[NSSet setWithArray:array]
       callbackSelector:@selector(tagsWithAliasCallback:tags:alias:)
                 object:self];
     
 }
-    
+
 -(void)setAlias:(CDVInvokedUrlCommand *)command{
     
     NSArray *arguments=[command arguments];
-   [APService setAlias:[arguments objectAtIndex:0]
-      callbackSelector:@selector(tagsWithAliasCallback:tags:alias:)
-                object:self];
+    [APService setAlias:[arguments objectAtIndex:0]
+       callbackSelector:@selector(tagsWithAliasCallback:tags:alias:)
+                 object:self];
     
 }
 
@@ -73,13 +73,13 @@
     }
 }
 
-    
+
 -(void)tagsWithAliasCallback:(int)resultCode tags:(NSSet *)tags alias:(NSString *)alias{
     
     NSDictionary *dict=[NSDictionary dictionaryWithObjectsAndKeys:
-                              [NSNumber numberWithInt:resultCode],@"resultCode",
+                        [NSNumber numberWithInt:resultCode],@"resultCode",
                         tags==nil?[NSNull null]:[tags allObjects],@"tags",
-                                   alias==nil?[NSNull null]:alias,@"alias",nil];
+                        alias==nil?[NSNull null]:alias,@"alias",nil];
     NSMutableDictionary *data = [NSMutableDictionary dictionary];
     [data setObject:[NSNumber numberWithInt:resultCode] forKey:@"resultCode"];
     [data setObject:tags==nil?[NSNull null]:[tags allObjects] forKey:@"tags"];
@@ -90,7 +90,7 @@
     NSString *jsonString = [[NSString alloc]initWithData:jsonData encoding:NSUTF8StringEncoding];
 
     dispatch_async(dispatch_get_main_queue(), ^{
-      [self.commandDelegate evalJs:[NSString stringWithFormat:@"cordova.fireDocumentEvent('jpush.setTagsWithAlias',%@)",jsonString]];
+        [self.commandDelegate evalJs:[NSString stringWithFormat:@"cordova.fireDocumentEvent('jpush.setTagsWithAlias',%@)",jsonString]];
 //      [self writeJavascript:[NSString stringWithFormat:@"window.plugins.jPushPlugin.pushCallback('%@')",jsonString]];
     });
     
@@ -117,7 +117,6 @@
     if (pageName) {
         [APService stopLogPageView:pageName];
     }
-
 }
 -(void)beginLogPageView:(CDVInvokedUrlCommand*)command{
     NSArray *arguments=command.arguments;
@@ -130,7 +129,6 @@
     if (pageName) {
         [APService beginLogPageView:pageName duration:duration];
     }
-
 }
 -(void)setBadge:(CDVInvokedUrlCommand*)command{
     NSArray *argument=command.arguments;
@@ -155,7 +153,6 @@
 -(void)stopPush:(CDVInvokedUrlCommand*)command{
     
     [[UIApplication sharedApplication]unregisterForRemoteNotifications];
-
 }
 - (void)failWithCallbackID:(NSString *)callbackID {
     CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR];
@@ -192,22 +189,51 @@
 }
 
 - (void)networkDidReceiveMessage:(NSNotification *)notification {
-
-    NSDictionary *userInfo = [notification userInfo];
-    NSLog(@"%@",userInfo);
     
-    NSError  *error;
-    NSData   *jsonData   = [NSJSONSerialization dataWithJSONObject:userInfo options:0 error:&error];
-    NSString *jsonString = [[NSString alloc]initWithData:jsonData encoding:NSUTF8StringEncoding];
- 
-    NSLog(@"%@",jsonString);
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        
-        [self writeJavascript:[NSString stringWithFormat:@"window.plugins.jPushPlugin.receiveMessageIniOSCallback('%@')",jsonString]];
-        
-    });
+    NSLog(@"networkDidReceiveMessage");
+    /*
+     NSDictionary *userInfo = [notification userInfo];
+     NSLog(@"%@",userInfo);
 
+     NSError  *error;
+     NSData   *jsonData   = [NSJSONSerialization dataWithJSONObject:userInfo options:0 error:&error];
+     NSString *jsonString = [[NSString alloc]initWithData:jsonData encoding:NSUTF8StringEncoding];
+
+     NSLog(@"%@",jsonString);
+
+     dispatch_async(dispatch_get_main_queue(), ^{
+
+     [self writeJavascript:[NSString stringWithFormat:@"window.plugins.jPushPlugin.receiveMessageIniOSCallback('%@')",jsonString]];
+
+     });
+     */
+}
+
+- (void)notificationReceived {
+    NSLog(@"Notification received");
+
+    if (notificationMessage)
+    {
+        NSLog(@"%@",notificationMessage);
+        
+        NSError  *error;
+        NSData   *jsonData   = [NSJSONSerialization dataWithJSONObject:notificationMessage options:0 error:&error];
+        NSString *jsonString = [[NSString alloc]initWithData:jsonData encoding:NSUTF8StringEncoding];
+        
+        NSLog(@"%@",jsonString);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:@"window.jpush = '%@'",jsonString]];
+            if (isInline)
+            {
+                [self.commandDelegate evalJs:[NSString stringWithFormat:@"window.plugins.jPushPlugin.receiveNotificationIniOSCallback('%@', 1)",jsonString]];
+            } else {
+                [self.commandDelegate evalJs:[NSString stringWithFormat:@"window.plugins.jPushPlugin.receiveNotificationIniOSCallback('%@', 0)",jsonString]];
+            }
+        });
+
+        self.notificationMessage = nil;
+    }
 }
 
 @end
